@@ -1,136 +1,317 @@
-# Core Banking Cards Service - Test Documentation
+# Card record services: test guide
 
-## Overview
-This document provides an overview of the test cases for the service layer in the Core Banking Cards application. The tests in this package validate the business logic implemented in the service classes, ensuring that they correctly handle various scenarios including success paths, error conditions, and edge cases.
+[Repository guide](../../../../../../../../../../../README.md) · [Module build](../../../../../../../../../../pom.xml)
 
-## Testing Frameworks and Libraries
+## Purpose and boundary
 
-The test suite uses the following frameworks and libraries:
+This guide maps the authored tests beneath this directory to their source files and gives reproducible commands for reviewing their actual assertions. The test inventory below is a source inventory, not a measured coverage percentage or a record of a successful run.
 
-- **JUnit 5**: The core testing framework for writing and running tests
-- **Mockito**: For mocking dependencies and verifying interactions
-- **MockedStatic**: For mocking static methods (used with PaginationUtils and FilterUtils)
-- **StepVerifier**: For testing reactive streams (Mono and Flux) from Project Reactor
-- **Spring Test**: For integration with Spring's testing support
+CardProviderServiceTest exercises provider-record CRUD. It does not contact an issuer, processor, network, or card sandbox. CardTransaction records and mocked card-security tests do not establish authorization, clearing, settlement, PIN handling, or PCI acceptance.
 
-## Common Testing Patterns
+## Prerequisites and fixture ownership
 
-All service tests follow these common patterns:
+Run commands from the repository root with JDK 25 selected in both `java --version` and `mvn --version`. Resolve the matching parent/framework and reactor dependencies through your authorized Maven configuration. The listed fixture source controls the synthetic IDs, DTOs, mocked dependencies, and expected outcomes; it is not a seed script for a running bank. Read setup and teardown before extending a fixture or executing another module's integration tests.
 
-1. **Setup**: Each test class uses `@BeforeEach` to initialize test data and DTOs
-2. **Mocking**: Dependencies are mocked using `@Mock` and injected with `@InjectMocks`
-3. **Reactive Testing**: StepVerifier is used to test the reactive streams returned by service methods
-4. **Verification**: Mockito's verify() is used to ensure that dependencies are called correctly
+## Run and inspect
 
-## Test Classes
+Run one existing class together with its reactor dependencies:
 
-### CardServiceTest
-Tests for the core card management service that handles basic card operations.
+```sh
+mvn -B -pl core-banking-cards-core -am test -DskipOpenApiGen \
+  -Dtest=CardAcquirerServiceTest -Dsurefire.failIfNoSpecifiedTests=false
+```
 
-**Key Test Cases**:
-- Creating a new card
-- Retrieving a card by ID
-- Updating an existing card
-- Deleting a card
-- Handling not-found scenarios
+To run that module's configured test lifecycle after inspecting all of its fixtures:
 
-### CardConfigurationServiceTest
-Tests for the service that manages card configuration settings.
+```sh
+mvn -B -pl core-banking-cards-core -am test -DskipOpenApiGen
+```
 
-**Key Test Cases**:
-- Listing configurations with pagination
-- Creating a new configuration
-- Retrieving a configuration by ID
-- Updating an existing configuration
-- Deleting a configuration
-- Handling wrong card ID scenarios
+`skipOpenApiGen` prevents the parent's fixed-port API-generation startup; it does not skip tests or isolate external resources. `failIfNoSpecifiedTests=false` permits dependency modules without the selected class. Confirm that the selected class appears in `core-banking-cards-core/target/surefire-reports/` and inspect tests, failures, errors, and skips in the XML. A missing report or skipped case is not a passing qualification. These commands were source-checked for this guide; no new product-test pass is claimed here.
 
-### CardLimitServiceTest
-Tests for the service that manages card spending limits.
+## Source inventory
 
-**Key Test Cases**:
-- Listing limits with pagination
-- Creating a new limit
-- Retrieving a limit by ID
-- Updating an existing limit
-- Deleting a limit
-- Handling wrong card ID scenarios
+Each entry lists the existing test method names. Names identify intent; read the linked body to see whether a collaborator, static utility, or the method itself is stubbed.
 
-### CardProviderServiceTest
-Tests for the service that integrates with card providers.
+### [CardAcquirerServiceTest](acquirer/v1/CardAcquirerServiceTest.java)
 
-**Key Test Cases**:
-- Listing providers with pagination
-- Creating a new provider
-- Retrieving a provider by ID
-- Updating an existing provider
-- Deleting a provider
-- Handling wrong card ID scenarios
+- `listAcquirers_Success`
+- `createAcquirer_Success`
+- `getAcquirer_Success`
+- `getAcquirer_NotFound`
+- `updateAcquirer_Success`
+- `updateAcquirer_NotFound`
+- `deleteAcquirer_Success`
+- `deleteAcquirer_NotFound`
 
-### CardSecurityServiceTest
-Tests for the service that manages card security settings.
+### [CardBalanceServiceTest](balance/v1/CardBalanceServiceTest.java)
 
-**Key Test Cases**:
-- Listing security settings with pagination
-- Creating a new security setting
-- Retrieving a security setting by ID
-- Updating an existing security setting
-- Deleting a security setting
-- Handling wrong card ID scenarios
-- Handling error conditions
+- `listBalances_Success`
+- `createBalance_Success`
+- `getBalance_Success`
+- `getBalance_WrongCardId`
+- `updateBalance_Success`
+- `updateBalance_WrongCardId`
+- `deleteBalance_Success`
+- `deleteBalance_WrongCardId`
 
-### CardTransactionServiceTest
-Tests for the service that manages card transactions.
+### [BINServiceTest](bin/v1/BINServiceTest.java)
 
-**Key Test Cases**:
-- Listing transactions with pagination
-- Creating a new transaction
-- Retrieving a transaction by ID
-- Filtering transactions with custom criteria
-- Updating an existing transaction
-- Deleting a transaction
-- Handling wrong card ID scenarios
+- `listBINs_Success`
+- `createBIN_Success`
+- `getBIN_Success`
+- `getBIN_NotFound`
+- `getBINByNumber_Success`
+- `getBINByNumber_NotFound`
+- `updateBIN_Success`
+- `updateBIN_NotFound`
+- `deleteBIN_Success`
+- `deleteBIN_NotFound`
 
-### PhysicalCardServiceTest
-Tests for the service that manages physical cards.
+### [CardServiceTest](card/v1/CardServiceTest.java)
 
-**Key Test Cases**:
-- Listing physical cards with pagination
-- Creating a new physical card
-- Retrieving a physical card by ID
-- Updating an existing physical card
-- Deleting a physical card
-- Handling wrong card ID scenarios
+- `createCard_Success`
+- `getCard_Success`
+- `getCard_NotFound`
+- `updateCard_Success`
+- `updateCard_NotFound`
+- `deleteCard_Success`
+- `deleteCard_NotFound`
 
-### VirtualCardServiceTest
-Tests for the service that manages virtual cards.
+### [CardConfigurationServiceTest](configuration/v1/CardConfigurationServiceTest.java)
 
-**Key Test Cases**:
-- Listing virtual cards with pagination
-- Creating a new virtual card
-- Retrieving a virtual card by ID
-- Updating an existing virtual card
-- Deleting a virtual card
-- Handling wrong card ID scenarios
+- `listConfigurations_Success`
+- `createConfiguration_Success`
+- `getConfiguration_Success`
+- `getConfiguration_NotFound`
+- `getConfiguration_WrongCardId`
+- `updateConfiguration_Success`
+- `updateConfiguration_NotFound`
+- `updateConfiguration_WrongCardId`
+- `deleteConfiguration_Success`
+- `deleteConfiguration_NotFound`
+- `deleteConfiguration_WrongCardId`
 
-## Testing Strategies
+### [CardDisputeServiceTest](dispute/v1/CardDisputeServiceTest.java)
 
-### Pagination Testing
-All services that return paginated results use a similar approach:
-1. Mock the static `PaginationUtils.paginateQuery()` method
-2. Verify that the method is called with the correct parameters
-3. Return a mocked `PaginationResponse` object
+- `listDisputes_Success`
+- `createDispute_Success`
+- `getDispute_Success`
+- `getDispute_WrongCardId`
+- `updateDispute_Success`
+- `updateDispute_WrongCardId`
+- `deleteDispute_Success`
+- `deleteDispute_WrongCardId`
 
-Example:
+### [CardEnrollmentServiceTest](enrollment/v1/CardEnrollmentServiceTest.java)
+
+- `listEnrollments_Success`
+- `createEnrollment_Success`
+- `getEnrollment_Success`
+- `getEnrollment_WrongCardId`
+- `updateEnrollment_Success`
+- `updateEnrollment_WrongCardId`
+- `deleteEnrollment_Success`
+- `deleteEnrollment_WrongCardId`
+
+### [CardGatewayServiceTest](gateway/v1/CardGatewayServiceTest.java)
+
+- `listGateways_Success`
+- `createGateway_Success`
+- `getGateway_Success`
+- `getGateway_NotFound`
+- `updateGateway_Success`
+- `updateGateway_NotFound`
+- `deleteGateway_Success`
+- `deleteGateway_NotFound`
+
+### [CardInterestServiceTest](interest/v1/CardInterestServiceTest.java)
+
+- `listInterests_Success`
+- `createInterest_Success`
+- `getInterest_Success`
+- `getInterest_WrongCardId`
+- `updateInterest_Success`
+- `updateInterest_WrongCardId`
+- `deleteInterest_Success`
+- `deleteInterest_WrongCardId`
+
+### [IssuerServiceTest](issuer/v1/IssuerServiceTest.java)
+
+- `listIssuers_Success`
+- `createIssuer_Success`
+- `getIssuer_Success`
+- `getIssuer_NotFound`
+- `updateIssuer_Success`
+- `updateIssuer_NotFound`
+- `deleteIssuer_Success`
+- `deleteIssuer_NotFound`
+
+### [CardLimitServiceTest](limit/v1/CardLimitServiceTest.java)
+
+- `listLimits_Success`
+- `createLimit_Success`
+- `getLimit_Success`
+- `getLimit_NotFound`
+- `getLimit_WrongCard`
+- `updateLimit_Success`
+- `updateLimit_NotFound`
+- `updateLimit_WrongCard`
+- `deleteLimit_Success`
+- `deleteLimit_NotFound`
+- `deleteLimit_WrongCard`
+
+### [CardMerchantServiceTest](merchant/v1/CardMerchantServiceTest.java)
+
+- `listMerchants_Success`
+- `createMerchant_Success`
+- `getMerchant_Success`
+- `getMerchant_NotFound`
+- `updateMerchant_Success`
+- `updateMerchant_NotFound`
+- `deleteMerchant_Success`
+- `deleteMerchant_NotFound`
+
+### [CardNetworkServiceTest](network/v1/CardNetworkServiceTest.java)
+
+- `listNetworks_Success`
+- `createNetwork_Success`
+- `getNetwork_Success`
+- `getNetwork_NotFound`
+- `updateNetwork_Success`
+- `updateNetwork_NotFound`
+- `deleteNetwork_Success`
+- `deleteNetwork_NotFound`
+
+### [CardPaymentServiceTest](payment/v1/CardPaymentServiceTest.java)
+
+- `listPayments_Success`
+- `createPayment_Success`
+- `getPayment_Success`
+- `getPayment_WrongCardId`
+- `updatePayment_Success`
+- `updatePayment_WrongCardId`
+- `deletePayment_Success`
+- `deletePayment_WrongCardId`
+
+### [PhysicalCardServiceTest](physical/v1/PhysicalCardServiceTest.java)
+
+- `listPhysicalCards_Success`
+- `createPhysicalCard_Success`
+- `getPhysicalCard_Success`
+- `getPhysicalCard_NotFound`
+- `getPhysicalCard_WrongCard`
+- `updatePhysicalCard_Success`
+- `updatePhysicalCard_NotFound`
+- `updatePhysicalCard_WrongCard`
+- `deletePhysicalCard_Success`
+- `deletePhysicalCard_NotFound`
+- `deletePhysicalCard_WrongCard`
+
+### [CardProgramServiceTest](program/v1/CardProgramServiceTest.java)
+
+- `listPrograms_Success`
+- `createProgram_Success`
+- `getProgram_Success`
+- `getProgram_NotFound`
+- `updateProgram_Success`
+- `updateProgram_NotFound`
+- `deleteProgram_Success`
+- `deleteProgram_NotFound`
+
+### [CardPromotionServiceTest](promotion/v1/CardPromotionServiceTest.java)
+
+- `listPromotions_Success`
+- `createPromotion_Success`
+- `getPromotion_Success`
+- `getPromotion_WrongCardId`
+- `updatePromotion_Success`
+- `updatePromotion_WrongCardId`
+- `deletePromotion_Success`
+- `deletePromotion_WrongCardId`
+
+### [CardProviderServiceTest](provider/v1/CardProviderServiceTest.java)
+
+- `listProviders_Success`
+- `createProvider_Success`
+- `getProvider_Success`
+- `getProvider_NotFound`
+- `getProvider_WrongCard`
+- `updateProvider_Success`
+- `updateProvider_NotFound`
+- `updateProvider_WrongCard`
+- `deleteProvider_Success`
+- `deleteProvider_NotFound`
+- `deleteProvider_WrongCard`
+
+### [CardSecurityServiceTest](security/v1/CardSecurityServiceTest.java)
+
+- `listSecuritySettings_Success`
+- `createSecuritySetting_Success`
+- `createSecuritySetting_Error`
+- `getSecuritySetting_Success`
+- `getSecuritySetting_NotFound`
+- `getSecuritySetting_WrongCard`
+- `updateSecuritySetting_Success`
+- `updateSecuritySetting_NotFound`
+- `updateSecuritySetting_WrongCard`
+- `deleteSecuritySetting_Success`
+- `deleteSecuritySetting_NotFound`
+- `deleteSecuritySetting_WrongCard`
+
+### [CardTerminalServiceTest](terminal/v1/CardTerminalServiceTest.java)
+
+- `listTerminals_Success`
+- `createTerminal_Success`
+- `getTerminal_Success`
+- `getTerminal_NotFound`
+- `updateTerminal_Success`
+- `updateTerminal_NotFound`
+- `deleteTerminal_Success`
+- `deleteTerminal_NotFound`
+
+### [CardTransactionServiceTest](transaction/v1/CardTransactionServiceTest.java)
+
+- `listTransactions_Success`
+- `createTransaction_Success`
+- `getTransaction_Success`
+- `getTransaction_NotFound`
+- `getTransaction_WrongCard`
+- `findFiltered_Success`
+- `updateTransaction_Success`
+- `updateTransaction_NotFound`
+- `updateTransaction_WrongCard`
+- `deleteTransaction_Success`
+- `deleteTransaction_NotFound`
+- `deleteTransaction_WrongCard`
+
+### [VirtualCardServiceTest](virtual/v1/VirtualCardServiceTest.java)
+
+- `listVirtualCards_Success`
+- `createVirtualCard_Success`
+- `getVirtualCard_Success`
+- `getVirtualCard_NotFound`
+- `getVirtualCard_WrongCard`
+- `updateVirtualCard_Success`
+- `updateVirtualCard_NotFound`
+- `updateVirtualCard_WrongCard`
+- `deleteVirtualCard_Success`
+- `deleteVirtualCard_NotFound`
+- `deleteVirtualCard_WrongCard`
+
+## Actual source example
+
+This excerpt is `listAcquirers_Success` from [CardAcquirerServiceTest](acquirer/v1/CardAcquirerServiceTest.java). Use the surrounding class's imports and fixture setup; this excerpt is not a standalone Java program.
+
 ```java
 @Test
-void listTransactions_Success() {
+void listAcquirers_Success() {
     // Arrange
     PaginationRequest paginationRequest = new PaginationRequest();
-    
+
     @SuppressWarnings("unchecked")
-    PaginationResponse<CardTransactionDTO> expectedResponse = mock(PaginationResponse.class);
-    
+    PaginationResponse<CardAcquirerDTO> expectedResponse = mock(PaginationResponse.class);
+
     try (MockedStatic<PaginationUtils> paginationUtilsMocked = mockStatic(PaginationUtils.class)) {
         paginationUtilsMocked.when(() -> PaginationUtils.paginateQuery(
                 eq(paginationRequest),
@@ -140,10 +321,11 @@ void listTransactions_Success() {
         )).thenReturn(Mono.just(expectedResponse));
 
         // Act & Assert
-        StepVerifier.create(service.listTransactions(cardId, paginationRequest))
+        StepVerifier.create(service.listAcquirers(paginationRequest))
                 .expectNext(expectedResponse)
                 .verifyComplete();
 
+        // Verify that PaginationUtils.paginateQuery was called with the correct parameters
         paginationUtilsMocked.verify(() -> PaginationUtils.paginateQuery(
                 eq(paginationRequest),
                 any(Function.class),
@@ -154,80 +336,14 @@ void listTransactions_Success() {
 }
 ```
 
-### Filtering Testing
-For services that support filtering (like CardTransactionService), the tests use a spy to mock the filtering behavior:
+## Interpret and recover
 
-```java
-@Test
-void findFiltered_Success() {
-    // Arrange
-    @SuppressWarnings("unchecked")
-    FilterRequest<CardTransactionDTO> filterRequest = mock(FilterRequest.class);
+- A Reactor assertion must subscribe and verify termination; constructing a `Mono` alone does not execute it. Match emitted values, empty completion, and errors to the production contract rather than converting every absence to success.
+- A repository or mapper mock verifies a local call/result, not committed database state. A stubbed service method or static filter utility does not exercise its implementation. Use real HTTP/SDK/database cases for those boundaries.
+- For a failing mock assertion, reread the production branch and fixture data before changing expected values. Do not make a test pass by manufacturing the behavior inside a save callback.
+- For dependency resolution or Java errors, verify the actual Maven runtime and matching reactor artifacts. For no matching tests, check the class name and module rather than disabling all tests.
+- Coverage requires a configured measurement run and inspected report. Neither a class list nor a successful Maven exit proves every operation, error branch, authorization rule, provider interaction, or customer journey is covered.
 
-    @SuppressWarnings("unchecked")
-    PaginationResponse<CardTransactionDTO> expectedResponse = mock(PaginationResponse.class);
+## Maintain this guide
 
-    // Since we can't directly mock the GenericFilter class, we'll mock the service method instead
-    CardTransactionServiceImpl serviceSpy = spy(service);
-
-    // Mock the findFiltered method to return our expected response
-    doReturn(Mono.just(expectedResponse)).when(serviceSpy).findFiltered(filterRequest);
-
-    // Act & Assert
-    StepVerifier.create(serviceSpy.findFiltered(filterRequest))
-            .expectNext(expectedResponse)
-            .verifyComplete();
-
-    // Verify the method was called with the request
-    verify(serviceSpy).findFiltered(filterRequest);
-}
-```
-
-### Error Handling Testing
-Tests for error scenarios ensure that services properly handle exceptions and return appropriate responses:
-
-```java
-@Test
-void createSecuritySetting_Error() {
-    // Arrange
-    when(mapper.toEntity(any(CardSecurityDTO.class))).thenReturn(securityEntity);
-    when(repository.save(any(CardSecurity.class))).thenReturn(Mono.error(new RuntimeException("Database error")));
-
-    // Act & Assert
-    StepVerifier.create(service.createSecuritySetting(cardId, securityDTO))
-            .expectErrorMatches(throwable -> 
-                throwable instanceof RuntimeException && 
-                throwable.getMessage().contains("Error saving CardSecurity"))
-            .verify();
-
-    verify(mapper).toEntity(securityDTO);
-    verify(repository).save(securityEntity);
-    verify(mapper, never()).toDTO(any(CardSecurity.class));
-}
-```
-
-## Best Practices
-
-1. **Isolation**: Each test is isolated and does not depend on the state of other tests
-2. **Comprehensive Coverage**: Tests cover both success and failure scenarios
-3. **Readable Test Names**: Test method names clearly describe what is being tested
-4. **Consistent Structure**: All tests follow a consistent Arrange-Act-Assert pattern
-5. **Proper Mocking**: Dependencies are properly mocked to isolate the unit under test
-6. **Verification**: Interactions with dependencies are verified to ensure correct behavior
-
-## Running the Tests
-
-To run all service tests:
-```bash
-mvn test -Dtest=*ServiceTest
-```
-
-To run a specific service test:
-```bash
-mvn test -Dtest=CardTransactionServiceTest
-```
-
-To run a specific test method:
-```bash
-mvn test -Dtest=CardTransactionServiceTest#findFiltered_Success
-```
+Keep the inventory and runnable class selector aligned with the linked sources. Add regression cases for changed behavior, then record the command, fixture boundary, source revision, and reports in the relevant implementation review. Preserve separate evidence for unit behavior, transport contracts, database recovery, provider sandbox behavior, and live-provider acceptance.
