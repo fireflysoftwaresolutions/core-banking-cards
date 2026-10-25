@@ -1,0 +1,44 @@
+/*
+ * Copyright 2026 Firefly Software Foundation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package io.fireflysoftware.core.banking.cards.interfaces.dtos.card.cancellation;
+
+import java.util.UUID;
+
+public final class CardClosureObservationContracts {
+    private CardClosureObservationContracts() {}
+
+    public enum Capability {
+        AUTHORIZATIONS, CLEARING_SETTLEMENT, REFUNDS_RETURNS, DISPUTES_CHARGEBACKS,
+        CREDIT_FEES_TAX, TOKEN_WALLET, LATE_ITEM_DISPOSITION
+    }
+
+    public enum Status { UNKNOWN, OBLIGATIONS, CLEAR, NOT_APPLICABLE }
+
+    public record FenceRequest(UUID actionId, UUID closureId, UUID enrollmentId,
+                               Long expectedFenceVersion, Long acceptNotAfterEpochMillis) {}
+
+    /** Server-resolved fence intent scope; identity is never decoded from the request. */
+    public record FenceSelection(UUID tenantId, UUID actorId, UUID accountId, UUID enrollmentId) {}
+
+    /** The producer resolves the complete relationship selection under its retained fence. */
+    public record Scope(UUID tenantId, UUID accountId, UUID enrollmentId, UUID closureId,
+                        Long relationshipVersion, Long fenceVersion, String selectionDigest) {}
+
+    /** Internal producer evidence, not a caller-provided clearance declaration. */
+    public record Observation(UUID receiptId, Scope scope, Capability capability, Long sourceVersion,
+                              boolean complete, Status status, Long pendingCount, Long unknownCount) {}
+}

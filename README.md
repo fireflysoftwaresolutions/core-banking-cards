@@ -23,6 +23,8 @@ Card record creation and update reject every non-null PIN or CVV; responses and 
 
 Read the [persisted activation boundary](docs/card-activation.md) for the fail-closed owner action, proof reservation, issuer-observation contract and recovery states. The retained local qualification covers the core persistence prerequisite and generated-SDK failure boundary. Authenticated ownership, a configured issuer lifecycle adapter, genuine issuance, durable sandbox recovery, positive generated-SDK activation and live-provider acceptance remain open.
 
+Read the [cancellation and closure contracts](docs/card-cancellation.md) for immutable acceptance, retained spend restrictions and complete obligation coverage. These pure rules do not yet provide persisted cancellation, authenticated provider execution or account closure.
+
 ## Business ownership and supported journeys
 
 Maintain the card inventory and the configuration a card journey needs for issuance, activation, blocking, replacement, and cancellation.
