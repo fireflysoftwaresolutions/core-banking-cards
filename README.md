@@ -25,7 +25,7 @@ Read the [persisted activation boundary](docs/card-activation.md) for the fail-c
 
 Read the [cancellation and closure contracts](docs/card-cancellation.md) for immutable acceptance, retained spend restrictions and complete obligation coverage. These pure rules do not yet provide persisted cancellation, authenticated provider execution or account closure.
 
-Read the [managed enrollment contracts](docs/managed-card-enrollment.md) for explicit managed identity, supplied eligibility facts, inactive provider outcomes and observation before retry. Actual owner-purpose producers, durable enrollment and genuine provider/HTTP/SDK integration remain pending.
+Read the [historical managed enrollment contracts](docs/managed-card-enrollment.md) for the initial pure identity, intent and provider rules. The [managed reservation service guide](docs/managed-card-reservation.md) describes the added mapped reservation, exact replay and scoped recovery source. Native schema and role qualification, real owner-authority/fence bindings, issuer dispatch and HTTP/generated-SDK integration remain pending; the feature is disabled by default.
 
 ## Business ownership and supported journeys
 
