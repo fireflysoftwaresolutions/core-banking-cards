@@ -14,6 +14,7 @@ import java.security.MessageDigest;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.*;
 import org.fireflyframework.core.transaction.*;
 import org.fireflyframework.security.api.domain.SecurityPrincipal;
@@ -24,14 +25,26 @@ import reactor.core.publisher.Mono;
 
 /** Five-row local reservation only. No provider invocation, activation or admission fallback. */
 public final class ManagedCardEnrollmentServiceImpl implements ManagedCardEnrollmentService {
+    private final ManagedCardReservationAudit audit;
     private final SecurityContextPort principals;private final ManagedCardEnrollmentAuthority authority;
     private final ManagedCardEnrollmentSession command,reader;private final Clock clock;private final LongSupplier nanos;private final Supplier<UUID> ids;
     public ManagedCardEnrollmentServiceImpl(SecurityContextPort principals,ManagedCardEnrollmentAuthority authority,
             ManagedCardEnrollmentSession command,ManagedCardEnrollmentSession reader,Clock clock,LongSupplier nanos,Supplier<UUID> ids) {
+        this(principals,authority,command,reader,clock,nanos,ids,Optional.empty());
+    }
+    public ManagedCardEnrollmentServiceImpl(SecurityContextPort principals,ManagedCardEnrollmentAuthority authority,
+            ManagedCardEnrollmentSession command,ManagedCardEnrollmentSession reader,Clock clock,LongSupplier nanos,Supplier<UUID> ids,ManagedCardReservationAudit audit) {
+        this(principals,authority,command,reader,clock,nanos,ids,Optional.of(audit));
+    }
+    private ManagedCardEnrollmentServiceImpl(SecurityContextPort principals,ManagedCardEnrollmentAuthority authority,
+            ManagedCardEnrollmentSession command,ManagedCardEnrollmentSession reader,Clock clock,LongSupplier nanos,Supplier<UUID> ids,Optional<ManagedCardReservationAudit> configuredAudit) {
+        this.audit=configuredAudit.orElse(null);
         this.principals=Objects.requireNonNull(principals);this.authority=Objects.requireNonNull(authority);this.clock=Objects.requireNonNull(clock);this.nanos=Objects.requireNonNull(nanos);this.ids=Objects.requireNonNull(ids);
         this.command=Objects.requireNonNull(command);this.reader=Objects.requireNonNull(reader);
         if(command.role()!=ManagedCardEnrollmentSession.Role.COMMAND||reader.role()!=ManagedCardEnrollmentSession.Role.READER
                 ||command.operations()==reader.operations()||command.factory()==reader.factory())throw new IllegalArgumentException("DISTINCT_QUALIFIED_MANAGED_ROLE_SESSIONS_REQUIRED");
+        if(this.audit!=null&&(this.audit.factory()!=command.factory()||this.audit.operations()!=command.operations()||this.audit.principals()!=principals||this.audit.authority()!=authority||this.audit.clock()!=clock||this.audit.nanos()!=nanos))
+            throw new IllegalArgumentException("SAME_ORIGINAL_CARDS_AUDIT_RESOURCES_REQUIRED");
     }
     @Override public Mono<ManagedCardReservationReceipt> reserve(UUID accountId,Request request) {
         return Mono.defer(()->{
@@ -49,7 +62,8 @@ public final class ManagedCardEnrollmentServiceImpl implements ManagedCardEnroll
                         if(authorized.eligibility().values().stream().anyMatch(receipt->Instant.ofEpochMilli(receipt.validUntilEpochMillis()).isBefore(authorized.effectiveUntil())))
                             return Mono.error(failure(action,ManagedCardEnrollmentException.Reason.UNAVAILABLE));
                         window.constrain(authorized);
-                        return execute(command,authorized,request.actionId(),Purpose.RESERVE,Instant.ofEpochMilli(request.acceptNotAfterEpochMillis()),ManagedCardEnrollmentRules.digest(authorized.selection(),request),window,
+                        var fresh=new AtomicBoolean();
+                        return execute(command,authorized,request.actionId(),Purpose.RESERVE,Instant.ofEpochMilli(request.acceptNotAfterEpochMillis()),ManagedCardEnrollmentRules.digest(authorized.selection(),request),window,fresh,
                                 stamp->command.repository().loadReserved(authorized.scope(),action)
                                     .map(graph->{ManagedCardReservationRules.requireReplay(graph,authorized.selection(),request);
                                         if(!graph.action().accountFenceReceiptId().equals(authorized.accountFenceReceiptId()))throw failure(action,ManagedCardEnrollmentException.Reason.CONFLICT);
@@ -57,7 +71,7 @@ public final class ManagedCardEnrollmentServiceImpl implements ManagedCardEnroll
                                     .switchIfEmpty(Mono.defer(()->{
                                         ManagedCardEnrollmentRules.admit(request,authorized.selection(),authorized.eligibility(),stamp.dbNowMillis());
                                         var graph=ManagedCardReservationFactory.create(authorized.selection(),request,nextId(),nextId(),nextId(),nextId(),authorized.accountFenceReceiptId(),stamp.dbNowMillis());
-                                        return command.repository().appendReserved(graph);
+                                        return command.repository().appendReserved(graph).doOnNext(saved->fresh.set(true));
                                     })));
                     })).onErrorMap(error->safePreflight(action,error));
         });
@@ -73,14 +87,14 @@ public final class ManagedCardEnrollmentServiceImpl implements ManagedCardEnroll
                     .flatMap(authorized->{
                         validateAuthorization(principal,accountId,authorized);window.constrain(authorized);
                         // A fresh read purpose gets its own bound; the retained mutation deadline is never extended.
-                        return execute(reader,authorized,action,Purpose.RECOVER,null,null,window,stamp->reader.repository().loadReserved(authorized.scope(),action)
+                        return execute(reader,authorized,action,Purpose.RECOVER,null,null,window,new AtomicBoolean(),stamp->reader.repository().loadReserved(authorized.scope(),action)
                                 .switchIfEmpty(Mono.error(failure(action,ManagedCardEnrollmentException.Reason.NOT_FOUND)))
                                 .map(graph->{verify(graph);ManagedCardReservationRules.requireRecovery(graph,request);return graph;}));
                     })).onErrorMap(error->safePreflight(action,error));
         });
     }
     private Mono<ManagedCardReservationReceipt> execute(ManagedCardEnrollmentSession session,Authorization authorization,UUID action,
-            Purpose purpose,Instant mutationUntil,String intentDigest,ManagedCardEnrollmentWindow window,
+            Purpose purpose,Instant mutationUntil,String intentDigest,ManagedCardEnrollmentWindow window,AtomicBoolean fresh,
             Function<ManagedCardEnrollmentNativeContext.Stamp,Mono<ManagedCardReservationGraph>> work) {
         UUID nonce=nextId();UUID fence=authorization instanceof ReservationAuthorization reserved?reserved.accountFenceReceiptId():null;
         var request=new ManagedCardEnrollmentNativeContext.Request(nonce,authorization.scope(),authorization.actorId(),action,purpose,authorization.caller(),fence,intentDigest,
@@ -94,15 +108,17 @@ public final class ManagedCardEnrollmentServiceImpl implements ManagedCardEnroll
             long beforeNative=window.beforeNative();
             return session.nativeContext().enter(request).switchIfEmpty(Mono.error(failure(action,ManagedCardEnrollmentException.Reason.UNAVAILABLE)))
                 .flatMap(stamp->{window.installed(request,stamp,beforeNative,scope);return work.apply(stamp);})
-                .flatMap(graph->requireCurrent(window,authorization,action).then(Mono.defer(()->{
+                .flatMap(graph->requireCurrent(window,authorization,action).then(Mono.defer(()->
+                    audit!=null&&purpose==Purpose.RESERVE?audit.append(scope,request.nonce(),(ReservationAuthorization)authorization,graph,fresh.get()?ManagedCardReservationAudit.BusinessDisposition.NEW_RESERVATION:ManagedCardReservationAudit.BusinessDisposition.EXACT_RESERVE_REPLAY).thenReturn(graph):Mono.just(graph))))
+                .flatMap(graph->Mono.defer(()->{
                     window.remaining();return session.nativeContext().complete(request)
                         .filter(nonce::equals).switchIfEmpty(Mono.error(failure(action,ManagedCardEnrollmentException.Reason.UNAVAILABLE)))
                         .map(ignored->{window.remaining();return graph;});
-                })));
+                }));
         }).doOnError(error->workFailure.compareAndSet(null,error)))
           .onErrorMap(RootTransactionException.class,error->transactionFailure(action,error,workFailure.get()))
           .flatMap(completion->{
-              if(!completion.transactionFacts().boundaryCompleted())return Mono.error(new ManagedCardEnrollmentException(action,ManagedCardEnrollmentException.Reason.UNCERTAIN,completion.transactionFacts(),completion.cleanupFact()));
+              if(!completion.transactionFacts().boundaryCompleted()||!completion.transactionFacts().commitAcknowledged())return Mono.error(new ManagedCardEnrollmentException(action,ManagedCardEnrollmentException.Reason.UNCERTAIN,completion.transactionFacts(),completion.cleanupFact()));
               return Mono.defer(()->requireCurrent(window,authorization,action).then(Mono.fromCallable(()->{
                   window.remaining();var graph=completion.value();return new ManagedCardReservationReceipt(graph.acceptance(),graph.progress());
               }))).onErrorMap(error->new ManagedCardEnrollmentException(action,ManagedCardEnrollmentException.Reason.WITHHELD,completion.transactionFacts(),completion.cleanupFact()));

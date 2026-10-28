@@ -1,0 +1,13 @@
+package io.fireflysoftware.core.banking.cards.core.services.card.enrollment.store;
+import static org.junit.jupiter.api.Assertions.*;
+import java.time.*;
+import java.util.*;
+import org.junit.jupiter.api.Test;
+import org.fireflyframework.kernel.audit.*;
+import io.fireflysoftware.core.banking.cards.core.services.card.enrollment.*;
+class ManagedCardReservationAuditEvidenceTest {
+    static AuditActor actor(){return new AuditActor("https://issuer.example.test","operator","cards-client","sandbox-platform","staff",ManagedCardReservationGraphTest.id(2));}
+    @Test void stableEventUsesOnlyOriginalRetainedResultIdentitiesAndNativeTime(){var graph=ManagedCardReservationGraphTest.graph();var event=ManagedCardReservationAuditEvidence.event(graph,actor(),"cards-audit-1");assertEquals(graph.action().eventId(),event.eventId());assertEquals(graph.action().tenantId(),event.stream().resourceTenantId());assertEquals(graph.action().managedCardId(),event.stream().resourceId());assertEquals("core-banking-cards",event.stream().service());assertEquals("managed-card",event.stream().resourceType());assertEquals(graph.action().actionId(),event.processId());assertEquals(graph.action().receiptId(),event.correlationId());assertEquals(graph.action().operationId(),event.causationId());assertEquals(graph.action().recordedAt(),event.occurredAt());assertEquals(AuditEvent.Outcome.COMPLETED,event.outcome());}
+    @Test void fullRetainedResultDigestIsStableAndBindsEveryGeneratedIdentity(){var graph=ManagedCardReservationGraphTest.graph();String digest=ManagedCardReservationAuditEvidence.digest(graph);assertEquals("13229b0eb0669c3e20ab3511bb8574fa555e9aef3fd1536356c062f0e70aeecb",digest);assertEquals(64,digest.length());assertEquals(digest,ManagedCardReservationAuditEvidence.digest(graph));for(int i=0;i<5;i++){var ids=new UUID[]{graph.action().operationId(),graph.action().receiptId(),graph.action().eventId(),graph.action().outboxId(),graph.action().accountFenceReceiptId()};ids[i]=ManagedCardReservationGraphTest.id(900+i);var changed=ManagedCardReservationFactory.create(graph.selection(),graph.request(),ids[0],ids[1],ids[2],ids[3],ids[4],graph.action().recordedAt().toEpochMilli());assertNotEquals(digest,ManagedCardReservationAuditEvidence.digest(changed));}}
+    @Test void resourceUuidAndExactPlatformStringStaySeparate(){var graph=ManagedCardReservationGraphTest.graph();var actor=new AuditActor("https://issuer.example.test","operator","cards-client","Plátform/銀行",null,null);var event=ManagedCardReservationAuditEvidence.event(graph,actor,"cards-audit-1");assertEquals("Plátform/銀行",event.actor().platformTenantId());assertEquals(graph.scope().tenantId(),event.stream().resourceTenantId());}
+}
