@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationService;
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.impl.CardActivationServiceImpl;
-import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStore;
+import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStoreImpl;
 import io.fireflysoftware.core.banking.cards.models.repositories.card.CardIssuerInstrumentRepository;
 import io.r2dbc.spi.ConnectionFactory;
 import java.util.UUID;
@@ -75,7 +75,7 @@ class CardServiceWiringTest {
     @Configuration(proxyBeanMethods = false)
     @EnableR2dbcRepositories(basePackageClasses = CardIssuerInstrumentRepository.class,
             entityOperationsRef = "cardEntityOperations")
-    @Import({CardActivationStore.class, CardActivationServiceImpl.class})
+    @Import({CardActivationStoreImpl.class, CardActivationServiceImpl.class})
     static class RepositoryConfiguration {
         @Bean
         ConnectionFactory cardConnectionFactory() {

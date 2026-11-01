@@ -19,7 +19,7 @@ package io.fireflysoftware.core.banking.cards.core.services.card.activation.impl
 
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationPolicy;
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationService;
-import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStore;
+import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStoreImpl;
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardIssuerPort;
 
 import io.fireflysoftware.core.banking.cards.interfaces.dtos.card.CardActivationReceipt;
@@ -39,11 +39,11 @@ import reactor.core.publisher.Mono;
 /** Core alone verifies issuer observations before committing a local activation. */
 @Service("cardActivationService")
 public final class CardActivationServiceImpl implements CardActivationService {
-    private final CardActivationStore store;
+    private final CardActivationStoreImpl store;
     private final Optional<CardActivationPolicy> policy;
     private final Optional<CardIssuerPort> issuer;
 
-    public CardActivationServiceImpl(CardActivationStore store, Optional<CardActivationPolicy> policy,
+    public CardActivationServiceImpl(CardActivationStoreImpl store, Optional<CardActivationPolicy> policy,
                                  Optional<CardIssuerPort> issuer) {
         this.store = store;
         this.policy = policy;

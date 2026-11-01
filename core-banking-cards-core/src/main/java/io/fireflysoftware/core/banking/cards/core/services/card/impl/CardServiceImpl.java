@@ -111,7 +111,7 @@ public class CardServiceImpl implements CardService {
                     if (updatedCard.getCardStatus() == null) {
                         updatedCard.setCardStatus(current);
                     }
-                    if (!CardLifecycle.canTransition(current, updatedCard.getCardStatus())) {
+                    if (!CardLifecycleImpl.canTransition(current, updatedCard.getCardStatus())) {
                         return Mono.error(new IllegalStateException(
                                 "Card " + cardId + " cannot move from " + current + " to " + updatedCard.getCardStatus()));
                     }

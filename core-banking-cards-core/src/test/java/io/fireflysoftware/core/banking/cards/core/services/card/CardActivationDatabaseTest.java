@@ -454,11 +454,11 @@ class CardActivationDatabaseTest {
                 fixture.tenant, fixture.actor, fixture.party, fixture.account, java.time.OffsetDateTime.now().plusMinutes(1));
     }
 
-    private static io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStore activationStore(
+    private static io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStoreImpl activationStore(
             io.r2dbc.spi.ConnectionFactory connectionFactory) {
         var operations = new org.springframework.data.r2dbc.core.R2dbcEntityTemplate(connectionFactory);
         var repositories = new org.springframework.data.r2dbc.repository.support.R2dbcRepositoryFactory(operations);
-        return new io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStore(
+        return new io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStoreImpl(
                 repositories.getRepository(io.fireflysoftware.core.banking.cards.models.repositories.card.CardActivationActionRepository.class),
                 repositories.getRepository(io.fireflysoftware.core.banking.cards.models.repositories.card.CardIssuerInstrumentRepository.class));
     }

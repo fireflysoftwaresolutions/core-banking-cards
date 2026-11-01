@@ -26,7 +26,7 @@ import java.util.Set;
 /**
  * Allowed moves for a card. A draft is the only status that can be removed.
  */
-final class CardLifecycle {
+final class CardLifecycleImpl {
 
     private static final Map<CardStatusEnum, Set<CardStatusEnum>> ALLOWED = Map.of(
             CardStatusEnum.DRAFT, EnumSet.of(CardStatusEnum.ACTIVE, CardStatusEnum.CANCELLED),
@@ -36,7 +36,7 @@ final class CardLifecycle {
                     CardStatusEnum.ACTIVE, CardStatusEnum.EXPIRED, CardStatusEnum.CANCELLED)
     );
 
-    private CardLifecycle() {
+    private CardLifecycleImpl() {
     }
 
     static boolean canTransition(CardStatusEnum from, CardStatusEnum to) {

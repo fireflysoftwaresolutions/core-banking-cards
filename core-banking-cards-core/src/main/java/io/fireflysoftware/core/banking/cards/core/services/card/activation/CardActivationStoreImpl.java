@@ -31,15 +31,15 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 /** Native operations remain atomic; no transaction or lock spans an issuer call. */
-@Repository
-public class CardActivationStore {
+@Repository("cardActivationStore")
+public class CardActivationStoreImpl {
     private static final Set<String> ACTIVATION_REJECTIONS = Set.of(
             "Activation is not permitted", "Activation action conflicts with an existing request",
             "Invalid issuer observation");
     private final CardActivationActionRepository actions;
     private final CardIssuerInstrumentRepository instruments;
 
-    public CardActivationStore(CardActivationActionRepository actions, CardIssuerInstrumentRepository instruments) {
+    public CardActivationStoreImpl(CardActivationActionRepository actions, CardIssuerInstrumentRepository instruments) {
         this.actions = actions;
         this.instruments = instruments;
     }
@@ -48,8 +48,8 @@ public class CardActivationStore {
                                                String digest) {
         return actions.reserve(action, card, scope.tenantId(), scope.actorId(), scope.partyId(),
                         scope.accountId(), digest, scope.expiresAt())
-                .map(CardActivationStore::receipt).onErrorMap(DataAccessException.class,
-                        CardActivationStore::persistenceFailure);
+                .map(CardActivationStoreImpl::receipt).onErrorMap(DataAccessException.class,
+                        CardActivationStoreImpl::persistenceFailure);
     }
 
     public Mono<CardIssuerPort.Binding> binding(UUID card) {
@@ -63,8 +63,8 @@ public class CardActivationStore {
                                               String outcome, String issuerReceipt) {
         return actions.finish(action, scope.tenantId(), scope.actorId(), scope.partyId(), scope.accountId(),
                         scope.expiresAt(), outcome, issuerReceipt)
-                .map(CardActivationStore::receipt).onErrorMap(DataAccessException.class,
-                CardActivationStore::persistenceFailure);
+                .map(CardActivationStoreImpl::receipt).onErrorMap(DataAccessException.class,
+                CardActivationStoreImpl::persistenceFailure);
     }
 
     private static ResponseStatusException persistenceFailure(DataAccessException error) {
