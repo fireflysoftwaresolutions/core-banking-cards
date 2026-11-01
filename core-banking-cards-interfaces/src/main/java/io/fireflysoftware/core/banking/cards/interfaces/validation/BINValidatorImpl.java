@@ -24,7 +24,7 @@ import jakarta.validation.ConstraintValidatorContext;
  * Validator implementation for ValidBIN annotation.
  * Validates Bank Identification Numbers (BIN).
  */
-public class BINValidator implements ConstraintValidator<ValidBIN, String> {
+public class BINValidatorImpl implements ConstraintValidator<ValidBIN, String> {
 
     @Override
     public void initialize(ValidBIN constraintAnnotation) {

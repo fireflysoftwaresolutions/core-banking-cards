@@ -27,7 +27,7 @@ import java.lang.annotation.*;
  * Validates that the BIN follows the correct format and length requirements.
  */
 @Documented
-@Constraint(validatedBy = BINValidator.class)
+@Constraint(validatedBy = BINValidatorImpl.class)
 @Target({ElementType.FIELD, ElementType.PARAMETER})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ValidBIN {

@@ -24,7 +24,7 @@ import jakarta.validation.ConstraintValidatorContext;
  * Validator implementation for CardNumber annotation.
  * Validates card numbers using the Luhn algorithm.
  */
-public class CardNumberValidator implements ConstraintValidator<CardNumber, String> {
+public class CardNumberValidatorImpl implements ConstraintValidator<CardNumber, String> {
 
     @Override
     public void initialize(CardNumber constraintAnnotation) {
