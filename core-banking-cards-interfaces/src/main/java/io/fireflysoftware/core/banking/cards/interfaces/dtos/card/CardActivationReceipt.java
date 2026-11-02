@@ -18,9 +18,14 @@
 package io.fireflysoftware.core.banking.cards.interfaces.dtos.card;
 
 import java.time.OffsetDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.UUID;
 
 /** A historical action receipt; current card restrictions must be read separately. */
-public record CardActivationReceipt(UUID actionId, UUID cardId, State state, OffsetDateTime activationTime) {
+public record CardActivationReceipt(
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID actionId,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID cardId,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED) State state,
+        @Schema(ref = "#/components/schemas/FireflyInstant") OffsetDateTime activationTime) {
     public enum State { RESERVED, CONFIRMED, REJECTED, UNCERTAIN, RECONCILIATION_REQUIRED }
 }

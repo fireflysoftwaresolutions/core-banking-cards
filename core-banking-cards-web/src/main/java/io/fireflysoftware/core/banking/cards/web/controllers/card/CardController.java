@@ -26,6 +26,9 @@ import io.fireflysoftware.core.banking.cards.interfaces.dtos.card.CardActivation
 import io.fireflysoftware.core.banking.cards.interfaces.dtos.card.CardActivationReceipt;
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -40,6 +43,7 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.util.UUID;
+@SecurityScheme(name = "cardBearer", type = SecuritySchemeType.HTTP, scheme = "bearer", bearerFormat = "JWT")
 @Tag(name = "Cards", description = "APIs for managing card records within the banking system")
 @RestController
 @RequestMapping("/api/v1/cards")
@@ -51,7 +55,7 @@ public class CardController {
     @Autowired
     private CardActivationService activationService;
 
-    @Operation(summary = "Verify a card activation action",
+    @Operation(summary = "Initiate or observe the original card activation action",
             description = "Consumes issued possession proof only after core independently verifies the bound issuer operation. "
                     + "Requires authenticated current ownership and a configured issuer adapter. Pending or uncertain receipts do not activate a card.")
     @ApiResponses({
@@ -66,6 +70,7 @@ public class CardController {
                     content = @Content(schema = @Schema(implementation = CardActivationReceipt.class))),
             @ApiResponse(responseCode = "503", description = "Required activation integration is unavailable", content = @Content)
     })
+    @SecurityRequirement(name = "cardBearer")
     @DisableIdempotency
     @PostMapping(value = "/{cardId}/activation", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
@@ -80,6 +85,16 @@ public class CardController {
                     case RECONCILIATION_REQUIRED -> 409;
                     case RESERVED, UNCERTAIN -> 202;
                 }).body(receipt));
+    }
+
+    @Operation(summary = "Read a retained card activation receipt",
+            description = "Requires current authenticated ownership. This read never sends an issuer command, "
+                    + "consumes proof, or changes card state. Uncertain receipts remain uncertain.")
+    @SecurityRequirement(name = "cardBearer")
+    @GetMapping(value = "/{cardId}/activation/{actionId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<CardActivationReceipt>> recoverCardActivation(
+            @PathVariable UUID cardId, @PathVariable UUID actionId) {
+        return activationService.recover(cardId, actionId).map(ResponseEntity::ok);
     }
 
     @Operation(

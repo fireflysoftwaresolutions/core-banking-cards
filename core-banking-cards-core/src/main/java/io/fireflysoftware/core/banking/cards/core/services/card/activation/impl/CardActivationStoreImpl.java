@@ -15,7 +15,10 @@
  */
 
 
-package io.fireflysoftware.core.banking.cards.core.services.card.activation;
+package io.fireflysoftware.core.banking.cards.core.services.card.activation.impl;
+
+import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationPolicy;
+import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardIssuerPort;
 
 import io.fireflysoftware.core.banking.cards.interfaces.dtos.card.CardActivationReceipt;
 import io.fireflysoftware.core.banking.cards.models.entities.card.CardActivationAction;
@@ -47,13 +50,14 @@ public class CardActivationStoreImpl {
     public Mono<CardActivationReceipt> reserve(UUID action, UUID card, CardActivationPolicy.AuthorizedScope scope,
                                                String digest) {
         return actions.reserve(action, card, scope.tenantId(), scope.actorId(), scope.partyId(),
-                        scope.accountId(), digest, scope.expiresAt())
+                        scope.accountId(), digest, scope.expiresAt(), scope.bindingVersion())
                 .map(CardActivationStoreImpl::receipt).onErrorMap(DataAccessException.class,
                         CardActivationStoreImpl::persistenceFailure);
     }
 
-    public Mono<CardIssuerPort.Binding> binding(UUID card) {
-        return instruments.findByCardId(card).map(instrument -> new CardIssuerPort.Binding(
+    public Mono<CardIssuerPort.Binding> binding(UUID card, long expectedVersion) {
+        return instruments.findByCardId(card).filter(instrument -> expectedVersion > 0 && instrument.bindingVersion() == expectedVersion)
+                .map(instrument -> new CardIssuerPort.Binding(
                         instrument.cardId(), instrument.tenantId(), instrument.partyId(), instrument.accountId(),
                         instrument.adapterId(), instrument.instrumentReference(), instrument.bindingVersion()))
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.CONFLICT, "Activation is not permitted")));
@@ -62,9 +66,25 @@ public class CardActivationStoreImpl {
     public Mono<CardActivationReceipt> finish(UUID action, CardActivationPolicy.AuthorizedScope scope,
                                               String outcome, String issuerReceipt) {
         return actions.finish(action, scope.tenantId(), scope.actorId(), scope.partyId(), scope.accountId(),
-                        scope.expiresAt(), outcome, issuerReceipt)
+                        scope.expiresAt(), scope.bindingVersion(), outcome, issuerReceipt)
                 .map(CardActivationStoreImpl::receipt).onErrorMap(DataAccessException.class,
                 CardActivationStoreImpl::persistenceFailure);
+    }
+
+    public Mono<Boolean> claimDispatch(UUID action, CardActivationPolicy.AuthorizedScope scope) {
+        return actions.claimDispatch(action, scope.tenantId(), scope.actorId(), scope.partyId(), scope.accountId(),
+                        scope.expiresAt(), scope.bindingVersion())
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "Activation dispatch claim unavailable")))
+                .onErrorMap(DataAccessException.class, CardActivationStoreImpl::persistenceFailure);
+    }
+
+    public Mono<CardActivationReceipt> currentReceipt(UUID action, UUID card, CardActivationPolicy.AuthorizedScope scope) {
+        return actions.currentReceipt(action, card, scope.tenantId(), scope.actorId(), scope.partyId(), scope.accountId(),
+                        scope.expiresAt(), scope.bindingVersion()).map(CardActivationStoreImpl::receipt)
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Activation receipt is unavailable")))
+                .onErrorMap(DataAccessException.class, CardActivationStoreImpl::persistenceFailure);
     }
 
     private static ResponseStatusException persistenceFailure(DataAccessException error) {

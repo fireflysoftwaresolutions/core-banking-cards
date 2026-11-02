@@ -30,6 +30,7 @@ import org.fireflyframework.core.filters.FilterUtils;
 import org.fireflyframework.core.queries.PaginationRequest;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
@@ -37,8 +38,6 @@ import org.springframework.data.r2dbc.repository.support.R2dbcRepositoryFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import reactor.test.StepVerifier;
@@ -48,7 +47,6 @@ import java.time.Duration;
 import java.util.UUID;
 
 /** Disposable owner database checks; this does not qualify a card processor or activation. */
-@Testcontainers
 class CardSensitiveDataDatabaseTest {
     private static final Duration WAIT = Duration.ofSeconds(15);
     private static final String APP = "card_boundary_app";
@@ -58,7 +56,6 @@ class CardSensitiveDataDatabaseTest {
     private static String afterMigration;
     private static CardServiceImpl service;
 
-    @Container
     static final PostgreSQLContainer postgres =
             new PostgreSQLContainer("postgres:17-alpine")
                     .withDatabaseName("synthetic_card_boundary")
@@ -74,10 +71,22 @@ class CardSensitiveDataDatabaseTest {
                                                             new com.github.dockerjava.api.model
                                                                     .ExposedPort(5432))));
 
+    private static Database database;
+    private static boolean ownsContainer;
+
     @BeforeAll
     static void setup() throws Exception {
+        String profile=System.getProperty("cards.sensitive.test.database-profile");
+        if(profile==null){
+            postgres.start();ownsContainer=true;
+            database=new Database(postgres.getHost(),postgres.getMappedPort(5432),postgres.getDatabaseName(),postgres.getUsername(),postgres.getPassword());
+        }else database=externalDatabase(profile);
+        try(var connection=owner();var statement=connection.createStatement();var rows=statement.executeQuery(
+                "SELECT current_setting('server_version_num')::int/10000,(SELECT count(*) FROM pg_tables WHERE schemaname='public')")){
+            assertTrue(rows.next());assertEquals(17,rows.getInt(1));assertEquals(0,rows.getInt(2));
+        }
         Flyway.configure()
-                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .dataSource(database.jdbcUrl(), database.user(), database.password())
                 .locations("classpath:db/migration")
                 .target("5")
                 .load()
@@ -95,7 +104,7 @@ class CardSensitiveDataDatabaseTest {
         }
         beforeMigration = legacyDigest();
         Flyway.configure()
-                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .dataSource(database.jdbcUrl(), database.user(), database.password())
                 .locations("classpath:db/migration")
                 .load()
                 .migrate();
@@ -107,11 +116,11 @@ class CardSensitiveDataDatabaseTest {
                                 + ":"
                                 + PASSWORD
                                 + "@"
-                                + postgres.getHost()
+                                + database.host()
                                 + ":"
-                                + postgres.getMappedPort(5432)
+                                + database.port()
                                 + "/"
-                                + postgres.getDatabaseName());
+                                + database.name());
         var template = new R2dbcEntityTemplate(factory);
         FilterUtils.initializeTemplate(template);
         var repository = new R2dbcRepositoryFactory(template).getRepository(CardRepository.class);
@@ -226,11 +235,11 @@ class CardSensitiveDataDatabaseTest {
 
     private static Connection owner() throws SQLException {
         return DriverManager.getConnection(
-                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                database.jdbcUrl(), database.user(), database.password());
     }
 
     private static Connection app() throws SQLException {
-        return DriverManager.getConnection(postgres.getJdbcUrl(), APP, PASSWORD);
+        return DriverManager.getConnection(database.jdbcUrl(), APP, PASSWORD);
     }
 
     private static String legacyDigest() throws SQLException {
@@ -245,4 +254,32 @@ class CardSensitiveDataDatabaseTest {
             return rows.getString(1);
         }
     }
+    @AfterAll
+    static void stopOwnedContainer() {if(ownsContainer)postgres.stop();}
+
+    private static Database externalDatabase(String value) throws Exception {
+        var path=java.nio.file.Path.of(value);
+        assertTrue(path.isAbsolute()&&java.nio.file.Files.isRegularFile(path,java.nio.file.LinkOption.NOFOLLOW_LINKS));
+        assertTrue(java.nio.file.Files.size(path)>0&&java.nio.file.Files.size(path)<=4096);
+        var permissions=java.nio.file.Files.getPosixFilePermissions(path);
+        assertTrue(java.util.Set.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                java.nio.file.attribute.PosixFilePermission.OWNER_WRITE).containsAll(permissions),"Private owned test profile required");
+        var json=new com.fasterxml.jackson.databind.ObjectMapper().readTree(java.nio.file.Files.readAllBytes(path));
+        var fields=new java.util.HashSet<String>();json.fieldNames().forEachRemaining(fields::add);
+        assertEquals(java.util.Set.of("purpose","host","port","database","user","password"),fields);
+        assertEquals("CARD_SENSITIVE_DISPOSABLE_TEST",json.path("purpose").asText());
+        assertEquals("127.0.0.1",json.path("host").asText());
+        assertTrue(json.path("port").isInt()&&json.path("port").asInt()>1024&&json.path("port").asInt()<=65535);
+        assertTrue(json.path("database").asText().matches("cards_sensitive_native_[a-z0-9_]{1,32}"));
+        assertTrue(json.path("user").asText().matches("[a-z][a-z0-9_]{1,62}"));
+        assertTrue(json.path("password").isTextual()&&json.path("password").asText().length()>=32);
+        return new Database("127.0.0.1",json.path("port").asInt(),json.path("database").asText(),json.path("user").asText(),json.path("password").asText());
+    }
+
+    private record Database(String host,int port,String name,String user,String password) {
+        String jdbcUrl(){return "jdbc:postgresql://"+host+":"+port+"/"+name;}
+        @Override public String toString(){return "Database[redacted]";}
+    }
+
+
 }

@@ -27,17 +27,39 @@ import reactor.core.publisher.Mono;
 
 /** The native functions atomically enforce proof, ownership, expiry and action identity. */
 public interface CardActivationActionRepository extends Repository<CardActivationAction, UUID> {
-    @Query("SELECT * FROM reserve_card_activation(:action,:card,:tenant,:actor,:party,:account,:digest,:expires)")
+    @Query("SELECT * FROM public.reserve_card_activation(:action,:card,:tenant,:actor,:party,:account,:digest,:expires,:bindingVersion)")
     Mono<CardActivationAction> reserve(
             @Param("action") UUID action, @Param("card") UUID card,
             @Param("tenant") UUID tenant, @Param("actor") UUID actor,
             @Param("party") UUID party, @Param("account") UUID account,
-            @Param("digest") String digest, @Param("expires") OffsetDateTime expires);
+            @Param("digest") String digest, @Param("expires") OffsetDateTime expires,
+            @Param("bindingVersion") long bindingVersion);
 
-    @Query("SELECT * FROM finish_card_activation(:action,:tenant,:actor,:party,:account,:expires,:outcome,:receipt)")
+    @Query("SELECT * FROM public.finish_card_activation(:action,:tenant,:actor,:party,:account,:expires,:bindingVersion,:outcome,:receipt)")
     Mono<CardActivationAction> finish(
             @Param("action") UUID action, @Param("tenant") UUID tenant,
             @Param("actor") UUID actor, @Param("party") UUID party,
             @Param("account") UUID account, @Param("expires") OffsetDateTime expires,
+            @Param("bindingVersion") long bindingVersion,
             @Param("outcome") String outcome, @Param("receipt") String receipt);
+
+    @Query("SELECT public.claim_card_activation_dispatch(:action,:tenant,:actor,:party,:account,:expires,:bindingVersion)")
+    Mono<Boolean> claimDispatch(@Param("action") UUID action, @Param("tenant") UUID tenant,
+            @Param("actor") UUID actor, @Param("party") UUID party, @Param("account") UUID account,
+            @Param("expires") OffsetDateTime expires, @Param("bindingVersion") long bindingVersion);
+
+    @Query("""
+            SELECT a.* FROM public.card_activation_action a
+            JOIN public.card_issuer_instrument b ON b.card_id=a.card_id
+            JOIN public.card c ON c.card_id=a.card_id
+            WHERE a.action_id=:action AND a.card_id=:card AND a.tenant_id=:tenant AND a.actor_id=:actor
+              AND b.tenant_id=:tenant AND b.party_id=:party AND b.account_id=:account
+              AND c.party_id=b.party_id AND c.account_id=b.account_id
+              AND a.binding_version=:bindingVersion AND b.binding_version=:bindingVersion
+              AND :expires > clock_timestamp()
+            """)
+    Mono<CardActivationAction> currentReceipt(@Param("action") UUID action, @Param("card") UUID card,
+            @Param("tenant") UUID tenant, @Param("actor") UUID actor, @Param("party") UUID party,
+            @Param("account") UUID account, @Param("expires") OffsetDateTime expires,
+            @Param("bindingVersion") long bindingVersion);
 }

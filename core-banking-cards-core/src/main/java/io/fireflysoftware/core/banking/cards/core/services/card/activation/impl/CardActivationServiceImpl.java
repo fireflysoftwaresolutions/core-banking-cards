@@ -19,7 +19,7 @@ package io.fireflysoftware.core.banking.cards.core.services.card.activation.impl
 
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationPolicy;
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationService;
-import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardActivationStoreImpl;
+import io.fireflysoftware.core.banking.cards.core.services.card.activation.impl.CardActivationStoreImpl;
 import io.fireflysoftware.core.banking.cards.core.services.card.activation.CardIssuerPort;
 
 import io.fireflysoftware.core.banking.cards.interfaces.dtos.card.CardActivationReceipt;
@@ -27,6 +27,8 @@ import io.fireflysoftware.core.banking.cards.interfaces.dtos.card.CardActivation
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
@@ -36,7 +38,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
-/** Core alone verifies issuer observations before committing a local activation. */
+/** Core reserves proof and claims dispatch before any issuer command; only verified evidence can activate. */
 @Service("cardActivationService")
 public final class CardActivationServiceImpl implements CardActivationService {
     private final CardActivationStoreImpl store;
@@ -62,21 +64,51 @@ public final class CardActivationServiceImpl implements CardActivationService {
                 return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid activation request"));
             }
             String digest = digest(proof);
-            return authorize(cardId).flatMap(scope -> store.reserve(actionId, cardId, scope, digest))
-                    .flatMap(receipt -> terminal(receipt) ? Mono.just(receipt)
-                            : store.binding(cardId).flatMap(binding -> issuer.get().observeActivation(binding, actionId)
-                                    .map(observation -> verified(binding, actionId, observation))
-                                    .defaultIfEmpty(new Verified("UNCERTAIN", null))
-                                    .onErrorReturn(new Verified("UNCERTAIN", null))
-                                    .flatMap(verified -> authorize(cardId).flatMap(scope ->
-                                            store.finish(actionId, scope, verified.outcome(), verified.receipt())))));
+            return authorize(cardId).flatMap(scope -> {
+                if (issuer.get().configuration() != CardIssuerPort.Configuration.CONFIGURED) {
+                    return Mono.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                            "Card issuer NOT_CONFIGURED: NOT_EXECUTED"));
+                }
+                return store.reserve(actionId, cardId, scope, digest)
+                        .flatMap(receipt -> terminal(receipt) ? Mono.just(receipt)
+                                : authorize(cardId).flatMap(current -> store.binding(cardId, current.bindingVersion())
+                                        .flatMap(binding -> store.claimDispatch(actionId, current)
+                                                .flatMap(claimed -> observeOrInitiate(binding, actionId, current, claimed))
+                                                .flatMap(observed -> authorize(cardId).flatMap(finalScope ->
+                                                        store.finish(actionId, finalScope, observed.outcome(), observed.receipt()))))));
+            });
         });
+    }
+
+    @Override
+    public Mono<CardActivationReceipt> recover(UUID cardId, UUID actionId) {
+        return Mono.defer(() -> {
+            if (policy.isEmpty()) return Mono.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Authenticated activation policy is required"));
+            if (cardId == null || actionId == null || new UUID(0, 0).equals(cardId) || new UUID(0, 0).equals(actionId)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid activation action"));
+            }
+            return authorize(cardId).flatMap(scope -> store.currentReceipt(actionId, cardId, scope));
+        });
+    }
+
+    private Mono<Verified> observeOrInitiate(CardIssuerPort.Binding binding, UUID action,
+                                            CardActivationPolicy.AuthorizedScope scope, boolean claimed) {
+        return Mono.defer(() -> {
+            Instant deadline=scope.expiresAt().toInstant();
+            Duration remaining=Duration.between(Instant.now(), deadline);
+            if (remaining.isNegative() || remaining.isZero()) return Mono.<CardIssuerPort.Observation>error(
+                    new ResponseStatusException(HttpStatus.FORBIDDEN, "Activation authority expired"));
+            return (claimed ? issuer.orElseThrow().initiateActivation(binding, action, deadline)
+                    : issuer.orElseThrow().observeActivation(binding, action)).timeout(remaining);
+        }).map(observation -> verified(binding, action, observation))
+                .defaultIfEmpty(new Verified("UNCERTAIN", null)).onErrorReturn(new Verified("UNCERTAIN", null));
     }
 
     private Mono<CardActivationPolicy.AuthorizedScope> authorize(UUID card) {
         return policy.orElseThrow().authorize(card).filter(scope -> scope.tenantId() != null
                 && scope.actorId() != null && scope.partyId() != null && scope.accountId() != null
-                && scope.expiresAt() != null).switchIfEmpty(Mono.error(new ResponseStatusException(
+                && scope.expiresAt() != null && scope.bindingVersion() > 0).switchIfEmpty(Mono.error(new ResponseStatusException(
                         HttpStatus.FORBIDDEN, "Activation is not permitted")));
     }
 

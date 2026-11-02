@@ -53,7 +53,7 @@ class CardRepositoryArchitectureTest {
 
     @Test
     void activationStoreDependsOnSpringDataRepositoriesInsteadOfTheRawClient() throws Exception {
-        var store = assertDoesNotThrow(() -> Class.forName(ROOT + "core.services.card.activation.CardActivationStoreImpl"));
+        var store = assertDoesNotThrow(() -> Class.forName(ROOT + "core.services.card.activation.impl.CardActivationStoreImpl"));
         var constructor = store.getDeclaredConstructors()[0];
         assertEquals(2, constructor.getParameterCount());
         assertTrue(Arrays.stream(constructor.getParameterTypes()).allMatch(Repository.class::isAssignableFrom));

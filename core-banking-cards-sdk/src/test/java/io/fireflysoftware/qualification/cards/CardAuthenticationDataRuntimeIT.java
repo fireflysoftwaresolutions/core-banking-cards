@@ -40,7 +40,6 @@ import java.util.concurrent.TimeUnit;
 /**
  * Real owner executable/client credential boundary, without processor or tenant-authority claims.
  */
-@Testcontainers
 class CardAuthenticationDataRuntimeIT {
     private static final Duration WAIT = Duration.ofSeconds(20);
     private static final String PASSWORD = UUID.randomUUID().toString();
@@ -51,8 +50,7 @@ class CardAuthenticationDataRuntimeIT {
     private static int port;
     private static String historicalDigest;
 
-    @Container
-    static final PostgreSQLContainer postgres =
+    static final PostgreSQLContainer container =
             new PostgreSQLContainer("postgres:17-alpine")
                     .withDatabaseName("synthetic_card_http")
                     .withUsername("card_http_bootstrap")
@@ -67,14 +65,17 @@ class CardAuthenticationDataRuntimeIT {
                                                             new com.github.dockerjava.api.model
                                                                     .ExposedPort(5432))));
 
+    private static CardRuntimeTestDatabase database;
+
     @BeforeAll
     static void start() throws Exception {
+        database=CardRuntimeTestDatabase.start(container);
         var migration =
                 Flyway.configure()
                         .dataSource(
-                                postgres.getJdbcUrl(),
-                                postgres.getUsername(),
-                                postgres.getPassword())
+                                database.jdbcUrl(),
+                                database.user(),
+                                database.password())
                         .locations("classpath:db/migration");
         migration.target("5").load().migrate();
         try (var connection = owner();
@@ -115,13 +116,14 @@ class CardAuthenticationDataRuntimeIT {
                     "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO"
                         + " card_http_app");
         }
+        database.admitRuntime("card_http_app",PASSWORD);
         historicalDigest =
                 scalar(
                         "SELECT md5(row_to_json(c)::text) FROM card c WHERE card_id='"
                                 + LEGACY
                                 + "'");
         Flyway.configure()
-                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .dataSource(database.jdbcUrl(), database.user(), database.password())
                 .locations("classpath:db/migration")
                 .load()
                 .migrate();
@@ -133,7 +135,7 @@ class CardAuthenticationDataRuntimeIT {
                         .toAbsolutePath()
                         .normalize();
         assertTrue(java.nio.file.Files.isRegularFile(jar));
-        app =
+        var process =
                 new ProcessBuilder(
                                 Path.of(System.getProperty("java.home"), "bin/java").toString(),
                                 "-Xmx384m",
@@ -141,18 +143,19 @@ class CardAuthenticationDataRuntimeIT {
                                 jar.toString(),
                                 "--server.address=127.0.0.1",
                                 "--server.port=" + port,
-                                "--DB_HOST=" + postgres.getHost(),
-                                "--DB_PORT=" + postgres.getMappedPort(5432),
-                                "--DB_NAME=" + postgres.getDatabaseName(),
+                                "--DB_HOST=" + database.host(),
+                                "--DB_PORT=" + database.port(),
+                                "--DB_NAME=" + database.name(),
                                 "--DB_USERNAME=card_http_app",
-                                "--DB_PASSWORD=" + PASSWORD,
                                 "--DB_SSL_MODE=disable",
                                 "--spring.flyway.enabled=false",
                                 "--firefly.eda.enabled=false",
                                 "--firefly.stepevents.enabled=false")
                         .redirectErrorStream(true)
-                        .redirectOutput(Path.of("target/card-boundary-" + port + ".log").toFile())
-                        .start();
+                        .redirectOutput(Path.of("target/card-boundary-" + port + ".log").toFile());
+        process.environment().put("DB_PASSWORD",PASSWORD);
+        database.configureCache(process);
+        app=process.start();
         var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
         for (int i = 0; i < 160; i++) {
             assertTrue(app.isAlive(), "Private card owner exited before startup");
@@ -175,11 +178,15 @@ class CardAuthenticationDataRuntimeIT {
 
     @AfterAll
     static void stop() throws Exception {
-        if (app == null) return;
-        app.destroy();
-        if (!app.waitFor(8, TimeUnit.SECONDS)) {
-            app.destroyForcibly();
-            assertTrue(app.waitFor(5, TimeUnit.SECONDS));
+        try {
+            if(app!=null){
+                app.destroy();
+                if(!app.waitFor(8,TimeUnit.SECONDS)){app.destroyForcibly();assertTrue(app.waitFor(5,TimeUnit.SECONDS));}
+                assertFalse(app.isAlive());
+            }
+        } finally {
+            if(database!=null)database.stopOwnedContainer();
+            else if(container.isRunning())container.stop();
         }
     }
 
@@ -321,7 +328,7 @@ class CardAuthenticationDataRuntimeIT {
 
     private static Connection owner() throws SQLException {
         return DriverManager.getConnection(
-                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                database.jdbcUrl(), database.user(), database.password());
     }
 
     private static String scalar(String query) throws SQLException {

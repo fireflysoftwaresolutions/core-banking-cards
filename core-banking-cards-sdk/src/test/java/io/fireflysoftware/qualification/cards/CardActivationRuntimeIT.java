@@ -42,10 +42,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /** Real generated client and owner executable; no issuer/tenant adapter or positive journey claim. */
-@Testcontainers
 class CardActivationRuntimeIT {
-    @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine")
+    static final PostgreSQLContainer container = new PostgreSQLContainer("postgres:17-alpine")
             .withDatabaseName("synthetic_activation_http")
             .withUsername("activation_http_bootstrap")
             .withPassword(UUID.randomUUID().toString())
@@ -53,6 +51,7 @@ class CardActivationRuntimeIT {
                     new com.github.dockerjava.api.model.PortBinding(
                             com.github.dockerjava.api.model.Ports.Binding.bindIp("127.0.0.1"),
                             new com.github.dockerjava.api.model.ExposedPort(5432))));
+    private static final String RUNTIME_PASSWORD=UUID.randomUUID().toString()+UUID.randomUUID();
     private static Process app;
     private static int port;
     private static Path log;
@@ -61,22 +60,32 @@ class CardActivationRuntimeIT {
     private static final java.util.concurrent.atomic.AtomicReference<String> observedPath = new java.util.concurrent.atomic.AtomicReference<>();
     private static final java.util.concurrent.atomic.AtomicReference<String> observedKey = new java.util.concurrent.atomic.AtomicReference<>();
 
+    private static CardRuntimeTestDatabase database;
+
     @BeforeAll
     static void start() throws Exception {
-        Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+        database=CardRuntimeTestDatabase.start(container);
+        Flyway.configure().dataSource(database.jdbcUrl(), database.user(), database.password())
                 .locations("classpath:db/migration").load().migrate();
+        try(var c=DriverManager.getConnection(database.jdbcUrl(),database.user(),database.password());var st=c.createStatement()){
+            st.execute("CREATE ROLE cards_activation_http_runtime LOGIN PASSWORD '"+RUNTIME_PASSWORD+"' NOSUPERUSER NOBYPASSRLS NOINHERIT NOCREATEDB NOCREATEROLE;GRANT USAGE ON SCHEMA public TO cards_activation_http_runtime;GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO cards_activation_http_runtime");
+        }
+        database.admitRuntime("cards_activation_http_runtime",RUNTIME_PASSWORD);
         try (var socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             port = socket.getLocalPort();
         }
         log = Path.of("target/activation-boundary-" + port + ".log");
-        app = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin/java").toString(),
+        var process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin/java").toString(),
                 "-Xmx384m", "-jar", "../core-banking-cards-web/target/core-banking-cards.jar",
                 "--server.address=127.0.0.1", "--server.port=" + port,
-                "--DB_HOST=" + postgres.getHost(), "--DB_PORT=" + postgres.getMappedPort(5432),
-                "--DB_NAME=" + postgres.getDatabaseName(), "--DB_USERNAME=" + postgres.getUsername(),
-                "--DB_PASSWORD=" + postgres.getPassword(), "--DB_SSL_MODE=disable",
+                "--DB_HOST=" + database.host(), "--DB_PORT=" + database.port(),
+                "--DB_NAME=" + database.name(), "--DB_USERNAME=cards_activation_http_runtime",
+                "--DB_SSL_MODE=disable",
                 "--spring.flyway.enabled=false", "--firefly.eda.enabled=false", "--firefly.stepevents.enabled=false")
-                .redirectErrorStream(true).redirectOutput(log.toFile()).start();
+                .redirectErrorStream(true).redirectOutput(log.toFile());
+        process.environment().put("DB_PASSWORD",RUNTIME_PASSWORD);
+        database.configureCache(process);
+        app=process.start();
         proxy = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         proxy.createContext("/", exchange -> {
             byte[] body = exchange.getRequestBody().readAllBytes();
@@ -84,10 +93,10 @@ class CardActivationRuntimeIT {
             observedPath.set(exchange.getRequestURI().toString());
             observedKey.set(exchange.getRequestHeaders().getFirst("X-Idempotency-Key"));
             try {
-                var forwarded = HttpRequest.newBuilder(URI.create(base() + exchange.getRequestURI()))
-                        .header("Content-Type", "application/json")
-                        .header("X-Idempotency-Key", observedKey.get())
-                        .method(exchange.getRequestMethod(), HttpRequest.BodyPublishers.ofByteArray(body)).build();
+                var forwarding = HttpRequest.newBuilder(URI.create(base() + exchange.getRequestURI()))
+                        .header("Content-Type", "application/json");
+                if(observedKey.get()!=null)forwarding.header("X-Idempotency-Key",observedKey.get());
+                var forwarded=forwarding.method(exchange.getRequestMethod(), HttpRequest.BodyPublishers.ofByteArray(body)).build();
                 var response = HttpClient.newHttpClient().send(forwarded, HttpResponse.BodyHandlers.ofByteArray());
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(response.statusCode(), response.body().length);
@@ -118,11 +127,15 @@ class CardActivationRuntimeIT {
     @AfterAll
     static void stop() throws Exception {
         if (proxy != null) proxy.stop(0);
-        if (app == null) return;
-        app.destroy();
-        if (!app.waitFor(8, TimeUnit.SECONDS)) {
-            app.destroyForcibly();
-            assertTrue(app.waitFor(5, TimeUnit.SECONDS));
+        try {
+            if(app!=null){
+                app.destroy();
+                if(!app.waitFor(8,TimeUnit.SECONDS)){app.destroyForcibly();assertTrue(app.waitFor(5,TimeUnit.SECONDS));}
+                assertFalse(app.isAlive());
+            }
+        } finally {
+            if(database!=null)database.stopOwnedContainer();
+            else if(container.isRunning())container.stop();
         }
     }
 
@@ -172,11 +185,28 @@ class CardActivationRuntimeIT {
         assertEquals(400, invalid.getStatusCode().value());
         assertFalse(invalid.getResponseBodyAsString().contains(invalidProof));
         assertFalse(Files.readString(log).contains(invalidProof));
-        try (var connection = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+        try (var connection = DriverManager.getConnection(database.jdbcUrl(), database.user(), database.password());
                 var statement = connection.createStatement();
                 var rows = statement.executeQuery("SELECT count(*) FROM card_activation_action")) {
             assertTrue(rows.next());
             assertEquals(0, rows.getInt(1));
+        }
+    }
+
+    @Test
+    void generatedClientRecoveryRequiresCurrentAuthorityAndLeavesEveryActionUnchanged() throws Exception {
+        var client=new ApiClient();client.setBasePath("http://127.0.0.1:"+proxy.getAddress().getPort());
+        var api=new CardsApi(client);var card=UUID.randomUUID();var action=UUID.randomUUID();
+        for(int attempt=0;attempt<2;attempt++){
+            var refused=assertThrows(WebClientResponseException.class,
+                    ()->api.recoverCardActivation(card,action,null).block(Duration.ofSeconds(20)));
+            assertEquals(503,refused.getStatusCode().value());
+            assertEquals("/api/v1/cards/"+card+"/activation/"+action,observedPath.get());
+            assertNull(observedKey.get());assertEquals("",observedBody.get());
+        }
+        try(var c=DriverManager.getConnection(database.jdbcUrl(),database.user(),database.password());var statement=c.createStatement();
+                var rows=statement.executeQuery("SELECT (SELECT count(*) FROM card_activation_action)+(SELECT count(*) FROM card_activation_dispatch)+(SELECT count(*) FROM card_activation_proof)")){
+            assertTrue(rows.next());assertEquals(0,rows.getInt(1));
         }
     }
 

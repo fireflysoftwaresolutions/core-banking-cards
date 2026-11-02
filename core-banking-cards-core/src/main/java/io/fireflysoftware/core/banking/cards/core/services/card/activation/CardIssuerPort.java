@@ -18,11 +18,22 @@
 package io.fireflysoftware.core.banking.cards.core.services.card.activation;
 
 import java.util.UUID;
+import java.time.Instant;
 import reactor.core.publisher.Mono;
 
 /** Core-owned integration. Implementations verify the issuer using configured credentials. */
 public interface CardIssuerPort {
+    default Configuration configuration() { return Configuration.NOT_CONFIGURED; }
+
+    /** One external command, keyed by the durable Core action. Implementations must not retry uncertain delivery. */
+    default Mono<Observation> initiateActivation(Binding binding, UUID actionId, Instant expiresAt) {
+        return Mono.error(new CardIssuerUnavailableException());
+    }
+
+    /** Read-only provider lookup for the same binding and action; this must never initiate activation. */
     Mono<Observation> observeActivation(Binding binding, UUID actionId);
+
+    enum Configuration { CONFIGURED, NOT_CONFIGURED }
 
     record Binding(UUID cardId, UUID tenantId, UUID partyId, UUID accountId, String adapterId,
                    String instrumentReference, long version) {}

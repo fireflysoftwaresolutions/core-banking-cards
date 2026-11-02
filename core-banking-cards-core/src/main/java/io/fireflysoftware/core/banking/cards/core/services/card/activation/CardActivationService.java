@@ -24,4 +24,5 @@ import reactor.core.publisher.Mono;
 
 public interface CardActivationService {
     Mono<CardActivationReceipt> activate(UUID cardId, UUID actionId, CardActivationRequest request);
+    Mono<CardActivationReceipt> recover(UUID cardId, UUID actionId);
 }

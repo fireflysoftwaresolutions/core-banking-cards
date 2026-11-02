@@ -24,5 +24,5 @@ import reactor.core.publisher.Mono;
 /** Resolves authenticated context and current permission; request IDs are never identity proof. */
 public interface CardActivationPolicy {
     Mono<AuthorizedScope> authorize(UUID cardId);
-    record AuthorizedScope(UUID tenantId, UUID actorId, UUID partyId, UUID accountId, OffsetDateTime expiresAt) {}
+    record AuthorizedScope(UUID tenantId, UUID actorId, UUID partyId, UUID accountId, OffsetDateTime expiresAt, long bindingVersion) {}
 }

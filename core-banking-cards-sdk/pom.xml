@@ -162,6 +162,9 @@
                             <apiPackage>io.fireflysoftware.core.banking.cards.sdk.api</apiPackage>
                             <modelPackage>io.fireflysoftware.core.banking.cards.sdk.model</modelPackage>
                             <invokerPackage>io.fireflysoftware.core.banking.cards.sdk.invoker</invokerPackage>
+                            <schemaMappings>
+                                <schemaMapping>FireflyInstant=java.time.Instant</schemaMapping>
+                            </schemaMappings>
                             <configOptions>
                                 <java20>true</java20>
                                 <useTags>true</useTags>

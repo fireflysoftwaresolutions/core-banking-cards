@@ -5151,7 +5151,7 @@ paths:
     post:
       tags:
       - Cards
-      summary: Verify a card activation action
+      summary: Initiate or observe the original card activation action
       description: Consumes issued possession proof only after core independently
         verifies the bound issuer operation. Requires authenticated current ownership
         and a configured issuer adapter. Pending or uncertain receipts do not activate
@@ -5203,6 +5203,8 @@ paths:
                 $ref: "#/components/schemas/CardActivationReceipt"
         "503":
           description: Required activation integration is unavailable
+      security:
+      - cardBearer: []
       x-disable-idempotency: true
   /api/v1/cards/filter:
     post:
@@ -5503,6 +5505,46 @@ paths:
                 $ref: "#/components/schemas/CardAcquirerDTO"
         "400":
           description: Invalid card acquirer data provided
+  /api/v1/cards/{cardId}/activation/{actionId}:
+    get:
+      tags:
+      - Cards
+      summary: Read a retained card activation receipt
+      description: "Requires current authenticated ownership. This read never sends\
+        \ an issuer command, consumes proof, or changes card state. Uncertain receipts\
+        \ remain uncertain."
+      operationId: recoverCardActivation
+      parameters:
+      - name: cardId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: actionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-Idempotency-Key
+        in: header
+        description: "Optional retry key for scoped POST, PUT, PATCH, and DELETE response\
+          \ reuse. Safe methods ignore it. Reuse requires configured trusted identity\
+          \ and namespace; changed input returns 409. Business effects require durable\
+          \ application idempotency."
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardActivationReceipt"
+      security:
+      - cardBearer: []
 components:
   schemas:
     CardTerminalDTO:
@@ -8657,6 +8699,10 @@ components:
           format: password
           writeOnly: true
     CardActivationReceipt:
+      required:
+      - actionId
+      - cardId
+      - state
       type: object
       properties:
         actionId:
@@ -8674,8 +8720,7 @@ components:
           - UNCERTAIN
           - RECONCILIATION_REQUIRED
         activationTime:
-          type: string
-          format: date-time
+          $ref: "#/components/schemas/FireflyInstant"
     FilterOptions:
       type: object
       properties:
@@ -8802,3 +8847,11 @@ components:
         options:
           $ref: "#/components/schemas/FilterOptions"
       description: Generic filter request that includes both filter criteria and pagination
+    FireflyInstant:
+      type: string
+      format: date-time
+  securitySchemes:
+    cardBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
