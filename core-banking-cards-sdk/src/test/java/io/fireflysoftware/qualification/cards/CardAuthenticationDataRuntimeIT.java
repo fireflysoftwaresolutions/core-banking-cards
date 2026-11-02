@@ -66,6 +66,7 @@ class CardAuthenticationDataRuntimeIT {
                                                                     .ExposedPort(5432))));
 
     private static CardRuntimeTestDatabase database;
+    private static CardBoundaryTestAuthority authority;
 
     @BeforeAll
     static void start() throws Exception {
@@ -155,6 +156,8 @@ class CardAuthenticationDataRuntimeIT {
                         .redirectOutput(Path.of("target/card-boundary-" + port + ".log").toFile());
         process.environment().put("DB_PASSWORD",PASSWORD);
         database.configureCache(process);
+        authority=new CardBoundaryTestAuthority();
+        authority.configure(process);
         app=process.start();
         var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
         for (int i = 0; i < 160; i++) {
@@ -185,6 +188,7 @@ class CardAuthenticationDataRuntimeIT {
                 assertFalse(app.isAlive());
             }
         } finally {
+            if(authority!=null)authority.close();
             if(database!=null)database.stopOwnedContainer();
             else if(container.isRunning())container.stop();
         }
@@ -254,6 +258,7 @@ class CardAuthenticationDataRuntimeIT {
                         .send(
                                 HttpRequest.newBuilder(
                                                 URI.create(base() + "/api/v1/cards/" + LEGACY))
+                                        .header("Authorization",authority.bearer())
                                         .header("X-Request-ID", UUID.randomUUID().toString())
                                         .GET()
                                         .build(),
@@ -296,6 +301,7 @@ class CardAuthenticationDataRuntimeIT {
                         .build();
         var client = new ApiClient(transport);
         client.setBasePath(base());
+        client.addDefaultHeader("Authorization",authority.bearer());
         return new CardsApi(client);
     }
 
