@@ -61,6 +61,7 @@ class CardActivationRuntimeIT {
     private static final java.util.concurrent.atomic.AtomicReference<String> observedKey = new java.util.concurrent.atomic.AtomicReference<>();
 
     private static CardRuntimeTestDatabase database;
+    private static CardBoundaryTestAuthority authority;
 
     @BeforeAll
     static void start() throws Exception {
@@ -85,6 +86,8 @@ class CardActivationRuntimeIT {
                 .redirectErrorStream(true).redirectOutput(log.toFile());
         process.environment().put("DB_PASSWORD",RUNTIME_PASSWORD);
         database.configureCache(process);
+        authority=new CardBoundaryTestAuthority();
+        authority.configure(process);
         app=process.start();
         proxy = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         proxy.createContext("/", exchange -> {
@@ -95,6 +98,7 @@ class CardActivationRuntimeIT {
             try {
                 var forwarding = HttpRequest.newBuilder(URI.create(base() + exchange.getRequestURI()))
                         .header("Content-Type", "application/json");
+                if(exchange.getRequestHeaders().getFirst("Authorization")!=null)forwarding.header("Authorization",exchange.getRequestHeaders().getFirst("Authorization"));
                 if(observedKey.get()!=null)forwarding.header("X-Idempotency-Key",observedKey.get());
                 var forwarded=forwarding.method(exchange.getRequestMethod(), HttpRequest.BodyPublishers.ofByteArray(body)).build();
                 var response = HttpClient.newHttpClient().send(forwarded, HttpResponse.BodyHandlers.ofByteArray());
@@ -134,6 +138,7 @@ class CardActivationRuntimeIT {
                 assertFalse(app.isAlive());
             }
         } finally {
+            if(authority!=null)authority.close();
             if(database!=null)database.stopOwnedContainer();
             else if(container.isRunning())container.stop();
         }
@@ -165,7 +170,7 @@ class CardActivationRuntimeIT {
         String proof = "syntheticPossessionProofForHttpBoundaryOnly0123456789";
         var request = new CardActivationRequest().activationProof(proof);
         assertFalse(request.toString().contains(proof));
-        var client = new ApiClient();
+        var client = new ApiClient();client.addDefaultHeader("Authorization",authority.bearer());
         client.setBasePath("http://127.0.0.1:" + proxy.getAddress().getPort());
         var api = new CardsApi(client);
         UUID card = UUID.randomUUID();
@@ -195,7 +200,7 @@ class CardActivationRuntimeIT {
 
     @Test
     void generatedClientRecoveryRequiresCurrentAuthorityAndLeavesEveryActionUnchanged() throws Exception {
-        var client=new ApiClient();client.setBasePath("http://127.0.0.1:"+proxy.getAddress().getPort());
+        var client=new ApiClient();client.addDefaultHeader("Authorization",authority.bearer());client.setBasePath("http://127.0.0.1:"+proxy.getAddress().getPort());
         var api=new CardsApi(client);var card=UUID.randomUUID();var action=UUID.randomUUID();
         for(int attempt=0;attempt<2;attempt++){
             var refused=assertThrows(WebClientResponseException.class,
