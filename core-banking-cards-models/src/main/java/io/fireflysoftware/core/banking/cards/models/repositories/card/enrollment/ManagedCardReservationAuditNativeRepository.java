@@ -11,7 +11,7 @@ import reactor.core.publisher.Mono;
 /** Explicit owner deployment only; no CRUD or automatic repository bean. */
 @NoRepositoryBean
 public interface ManagedCardReservationAuditNativeRepository extends Repository<AuditRows.Event,UUID> {
-    @Query("SELECT public.cards_managed_original_audit_pair(:nonce,:event,:client,:realm,:staff,:policy,:evidence,:disposition) AS nonce")
-    Mono<UUID> pair(@Param("nonce")UUID nonce,@Param("event")UUID event,@Param("client")String client,@Param("realm")String realm,@Param("staff")UUID staff,
+    @Query("SELECT public.cards_managed_original_audit_pair(:nonce,:event,:auditNonce,:sequence,:hash,:client,:realm,:staff,:policy,:evidence,:disposition) AS nonce")
+    Mono<UUID> pair(@Param("nonce")UUID nonce,@Param("event")UUID event,@Param("auditNonce")UUID auditNonce,@Param("sequence")long sequence,@Param("hash")String hash,@Param("client")String client,@Param("realm")String realm,@Param("staff")UUID staff,
             @Param("policy")String policy,@Param("evidence")String evidence,@Param("disposition")String disposition);
 }
