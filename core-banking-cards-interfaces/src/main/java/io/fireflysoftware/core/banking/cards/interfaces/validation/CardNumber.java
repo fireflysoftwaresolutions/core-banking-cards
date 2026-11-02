@@ -27,7 +27,7 @@ import java.lang.annotation.*;
  * Validates that the card number follows the Luhn algorithm and has the correct format.
  */
 @Documented
-@Constraint(validatedBy = CardNumberValidator.class)
+@Constraint(validatedBy = CardNumberValidatorImpl.class)
 @Target({ElementType.FIELD, ElementType.PARAMETER})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface CardNumber {
